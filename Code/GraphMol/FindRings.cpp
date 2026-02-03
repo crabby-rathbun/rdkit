@@ -1055,6 +1055,60 @@ int findSSSR(const ROMol &mol, VECT_INT_VECT &res, bool includeDativeBonds,
       FindRings::removeExtraRings(fragRes, nexpt, mol);
     }
 
+    // GitHub #9064: Ensure all bonds in ring systems are properly marked.
+    // After computing SSSR, check if there are bonds between ring atoms that
+    // are not covered by any SSSR ring. If so, find additional rings to cover
+    // them. This handles edge cases in highly fused ring systems where the
+    // standard algorithm might miss some rings.
+    {
+      // Build a set of all bonds currently in rings
+      boost::dynamic_bitset<> currentRingBonds(nbnds);
+      for (const auto &ring : fragRes) {
+        INT_VECT bondRing;
+        RingUtils::convertToBonds(ring, bondRing, mol);
+        for (int bidx : bondRing) {
+          currentRingBonds.set(bidx);
+        }
+      }
+
+      // Build a set of atoms in rings
+      boost::dynamic_bitset<> currentRingAtoms(nats);
+      for (const auto &ring : fragRes) {
+        for (int aidx : ring) {
+          currentRingAtoms.set(aidx);
+        }
+      }
+
+      // Find bonds where both atoms are in rings but bond is not in any ring
+      std::vector<const Bond *> missingBonds;
+      for (unsigned int i = 0; i < nbnds; ++i) {
+        if (!currentRingBonds[i]) {
+          const Bond *bnd = mol.getBondWithIdx(i);
+          if (currentRingAtoms[bnd->getBeginAtomIdx()] &&
+              currentRingAtoms[bnd->getEndAtomIdx()]) {
+            missingBonds.push_back(bnd);
+          }
+        }
+      }
+
+      // Try to find rings containing the missing bonds
+      boost::dynamic_bitset<> deadBonds(nbnds);
+      for (const Bond *bnd : missingBonds) {
+        if (deadBonds[bnd->getIdx()]) continue;
+
+        bool ringFound = FindRings::findRingConnectingAtoms(
+            mol, bnd, fragRes, invars, currentRingBonds, currentRingAtoms);
+        if (!ringFound) {
+          deadBonds.set(bnd->getIdx());
+        }
+      }
+
+      // If we found extra rings, we may need to trim back to SSSR size
+      if (fragRes.size() > static_cast<unsigned int>(nexpt)) {
+        FindRings::removeExtraRings(fragRes, nexpt, mol);
+      }
+    }
+
     res.reserve(res.size() + fragRes.size());
     for (VECT_INT_VECT::const_iterator iter = fragRes.begin();
          iter != fragRes.end(); ++iter) {
