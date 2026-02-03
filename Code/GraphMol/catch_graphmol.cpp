@@ -5029,7 +5029,7 @@ M  END
     // All bonds should be in rings - this is a highly fused ring system
     int nonRingBondCount = 0;
     for (const auto bond : mol->bonds()) {
-      if (!bond->IsInRing()) {
+      if (!mol->getRingInfo()->isBondInRingOfSize(bond->getIdx(), 0)) {
         nonRingBondCount++;
       }
     }
@@ -5040,8 +5040,8 @@ M  END
     std::unique_ptr<ROMol> query(SmartsToMol("C!@c"));
     REQUIRE(query);
 
-    MatchVectType match;
-    bool hasMatch = SubstructMatch(*mol, *query, match);
+    RDKit::MatchVectType match;
+    bool hasMatch = RDKit::SubstructMatch(*mol, *query, match);
     CHECK(!hasMatch);  // Should NOT match
   }
 
@@ -5052,7 +5052,7 @@ M  END
 
     // All bonds should be in rings
     for (const auto bond : mol->bonds()) {
-      CHECK(bond->IsInRing());
+      CHECK(mol->getRingInfo()->isBondInRingOfSize(bond->getIdx(), 0));
     }
   }
 }
